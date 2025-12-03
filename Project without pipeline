@@ -1,0 +1,92 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report
+import re
+import nltk
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+
+# Download NLTK resources (only first time)
+nltk.download('stopwords')
+nltk.download('wordnet')
+
+# ---------------------------
+# 1. Load Dataset
+# ---------------------------
+
+# Example dataset
+data = {
+    "text": [
+        "I love this movie, it was amazing!",
+        "I hate this movie, worst ever.",
+        "This film was okay, not great but not terrible.",
+        "Absolutely fantastic experience, I enjoyed it!",
+        "Terrible acting and boring plot."
+    ],
+    "label": ["positive", "negative", "neutral", "positive", "negative"]
+}
+
+df = pd.DataFrame(data)
+
+# ---------------------------
+# 2. Preprocessing Function
+# ---------------------------
+
+lemmatizer = WordNetLemmatizer()
+stop_words = set(stopwords.words('english'))
+
+def preprocess(text):
+    text = text.lower()                           # lowercasing
+    text = re.sub(r'[^a-z\s]', '', text)          # remove punctuation/numbers
+    tokens = text.split()                         # tokenization
+    tokens = [w for w in tokens if w not in stop_words]   # remove stopwords
+    tokens = [lemmatizer.lemmatize(w) for w in tokens]    # lemmatization
+    return " ".join(tokens)
+
+df['clean_text'] = df['text'].apply(preprocess)
+
+# ---------------------------
+# 3. Train-Test Split
+# ---------------------------
+
+X_train, X_test, y_train, y_test = train_test_split(
+    df['clean_text'], df['label'], test_size=0.3, random_state=42)
+
+
+# ---------------------------
+# 4. Convert Text to Vectors (TF-IDF)
+# ---------------------------
+
+vectorizer = TfidfVectorizer()
+X_train_vec = vectorizer.fit_transform(X_train)
+X_test_vec = vectorizer.transform(X_test)
+
+# ---------------------------
+# 5. Train Model
+# ---------------------------
+
+model = LogisticRegression()
+model.fit(X_train_vec, y_train)
+model2=SVM()
+model2.fit(X_train_vec,y_train)
+# ---------------------------
+# 6. Evaluate Model
+# ---------------------------
+
+y_pred = model.predict(X_test_vec)
+print(classification_report(y_test, y_pred))
+y_pred2=model2.predict(X_test_vec)
+
+# ---------------------------
+# 7. Predict New Sentences
+# ---------------------------
+
+new_sentences = ["I really love this film", "The movie was boring and bad"]
+new_clean = [preprocess(s) for s in new_sentences]
+new_vec = vectorizer.transform(new_clean)
+predictions = model.predict(new_vec)
+
+for s, p in zip(new_sentences, predictions):
+    print(f"Text: {s} --> Predicted Sentiment: {p}")
