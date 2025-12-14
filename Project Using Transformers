@@ -1,0 +1,135 @@
+# ---------------------------
+# 1. Imports
+# ---------------------------
+import torch
+import numpy as np
+from datasets import load_dataset
+from transformers import (
+    AutoTokenizer,
+    AutoModelForSequenceClassification,
+    Trainer,
+    TrainingArguments,
+    DataCollatorWithPadding
+)
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+
+# ---------------------------
+# 2. Load Dataset (IMDb)
+# ---------------------------
+dataset = load_dataset("imdb")
+
+# Small subset (safe for CPU)
+train_data = dataset["train"].shuffle(seed=42).select(range(2000))
+test_data = dataset["test"].shuffle(seed=42).select(range(500))
+
+# ---------------------------
+# 3. Load Tokenizer & Model
+# ---------------------------
+model_name = "distilbert-base-uncased"
+
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+model = AutoModelForSequenceClassification.from_pretrained(
+    model_name,
+    num_labels=2
+)
+
+# ---------------------------
+# 4. Tokenization
+# ---------------------------
+def tokenize(batch):
+    return tokenizer(
+        batch["text"],
+        truncation=True,
+        padding=True,
+        max_length=256
+    )
+
+train_data = train_data.map(tokenize, batched=True)
+test_data = test_data.map(tokenize, batched=True)
+
+train_data.set_format("torch", columns=["input_ids", "attention_mask", "label"])
+test_data.set_format("torch", columns=["input_ids", "attention_mask", "label"])
+
+# ---------------------------
+# 5. Metrics Function (IMPORTANT)
+# ---------------------------
+def compute_metrics(eval_pred):
+    logits, labels = eval_pred
+    predictions = np.argmax(logits, axis=1)
+
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        labels, predictions, average="binary"
+    )
+    accuracy = accuracy_score(labels, predictions)
+
+    return {
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1
+    }
+
+# ---------------------------
+# 6. Training Arguments
+# ---------------------------
+training_args = TrainingArguments(
+    output_dir="./sentiment_model",
+    evaluation_strategy="epoch",
+    save_strategy="epoch",
+    learning_rate=2e-5,
+    per_device_train_batch_size=8,
+    per_device_eval_batch_size=8,
+    num_train_epochs=2,
+    weight_decay=0.01,
+    logging_steps=100,
+    load_best_model_at_end=True,
+    metric_for_best_model="f1"
+)
+
+data_collator = DataCollatorWithPadding(tokenizer)
+
+# ---------------------------
+# 7. Trainer
+# ---------------------------
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_data,
+    eval_dataset=test_data,
+    tokenizer=tokenizer,
+    data_collator=data_collator,
+    compute_metrics=compute_metrics
+)
+
+# ---------------------------
+# 8. Train Model
+# ---------------------------
+trainer.train()
+
+# ---------------------------
+# 9. Final Evaluation
+# ---------------------------
+results = trainer.evaluate()
+print("\nFinal Evaluation Metrics:")
+for key, value in results.items():
+    print(f"{key}: {value}")
+
+# ---------------------------
+# 10. Predict New Sentences
+# ---------------------------
+def predict_sentiment(text):
+    inputs = tokenizer(text, return_tensors="pt", truncation=True)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    prediction = torch.argmax(outputs.logits, dim=1).item()
+    return "Positive" if prediction == 1 else "Negative"
+
+samples = [
+    "I absolutely loved this movie!",
+    "The film was boring and disappointing."
+]
+
+print("\nSample Predictions:")
+for s in samples:
+    print(s, "→", predict_sentiment(s))
