@@ -1,3 +1,4 @@
 import streamlit as st
 st.title("Analysis Of Sentiments")
-st.sidebar("Enter Review ")
+with st.sidebar():
+  st.title("Enter Review")
